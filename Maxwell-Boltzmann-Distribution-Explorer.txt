@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maxwell-Boltzmann Distribution</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@2.2.1/dist/chartjs-plugin-annotation.min.js"></script>
+    <style>
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background: linear-gradient(to bottom, #e0f2fe, #bae6fd);
+        }
+        .slider-thumb::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 24px;
+            height: 24px;
+            background: #ef4444;
+            cursor: pointer;
+            border-radius: 50%;
+            border: 2px solid #ffffff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        .slider-thumb::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            background: #ef4444;
+            cursor: pointer;
+            border-radius: 50%;
+            border: none;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        .slider-track {
+            background: linear-gradient(to right, #f97316, #ef4444);
+            height: 6px;
+            border-radius: 3px;
+        }
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+        }
+        h1 {
+            background: linear-gradient(to right, #3b82f6, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+    </style>
+</head>
+<body class="font-sans">
+    <div class="container mx-auto p-4 sm:p-8 max-w-7xl">
+        <h1 class="text-3xl sm:text-4xl font-bold text-center mb-8">Maxwell-Boltzmann Distribution Explorer</h1>
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <!-- Parameters Panel -->
+            <div class="lg:col-span-1 card p-6 rounded-xl shadow-xl">
+                <h2 class="text-xl font-semibold mb-5 text-gray-800 border-b-2 border-blue-300 pb-3">Tune Your Gas!</h2>
+                
+                <div class="mb-6">
+                    <label for="temperature" class="block text-gray-800 font-medium">Temperature (K): <span id="tempValue" class="font-bold text-blue-600 float-right">300</span></label>
+                    <input type="range" id="temperature" min="100" max="1200" value="300" class="w-full slider-track appearance-none cursor-pointer slider-thumb mt-2">
+                </div>
+                
+                <div class="mb-6">
+                    <label for="molarMass" class="block text-gray-800 font-medium">Molar Mass (g/mol): <span id="massValue" class="font-bold text-blue-600 float-right">4.00</span></label>
+                    <input type="range" id="molarMass" min="1" max="100" value="4" step="0.01" class="w-full slider-track appearance-none cursor-pointer slider-thumb mt-2">
+                </div>
+                
+                <div class="mt-8 pt-4 border-t border-blue-300">
+                    <h3 class="text-lg font-semibold mb-3 text-gray-800">Key Speeds</h3>
+                    <div class="space-y-3 text-gray-700">
+                        <div class="flex justify-between items-center">
+                            <span class="flex items-center"><span class="w-3 h-3 bg-blue-500 rounded-full mr-2"></span>Most Probable</span>
+                            <span id="vp" class="font-bold text-blue-600"></span>
+                            <span class="text-sm">m/s</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="flex items-center"><span class="w-3 h-3 bg-green-500 rounded-full mr-2"></span>Average</span>
+                            <span id="vavg" class="font-bold text-green-600"></span>
+                            <span class="text-sm">m/s</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="flex items-center"><span class="w-3 h-3 bg-red-500 rounded-full mr-2"></span>Root-Mean-Square</span>
+                            <span id="vrms" class="font-bold text-red-600"></span>
+                            <span class="text-sm">m/s</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Chart Panel -->
+            <div class="lg:col-span-2 card p-6 rounded-xl shadow-xl">
+                <div class="relative h-96">
+                    <canvas id="mbChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="mt-6 text-center text-gray-600 text-sm">
+            <p>Explore how temperature and molar mass affect the speed distribution of gas molecules!</p>
+            <p>Slide the controls to see the curve and key speeds change in real-time.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // Constants
+            const R = 8.31446261815324; // Universal gas constant in J/(mol·K)
+
+            // Get DOM elements
+            const tempSlider = document.getElementById('temperature');
+            const massSlider = document.getElementById('molarMass');
+            const tempValueSpan = document.getElementById('tempValue');
+            const massValueSpan = document.getElementById('massValue');
+            const vpSpan = document.getElementById('vp');
+            const vavgSpan = document.getElementById('vavg');
+            const vrmsSpan = document.getElementById('vrms');
+            const ctx = document.getElementById('mbChart').getContext('2d');
+
+            // Maxwell-Boltzmann distribution function f(v)
+            function maxwellBoltzmann(v, T, M_kg) {
+                const a = Math.pow(M_kg / (2 * Math.PI * R * T), 1.5);
+                const b = 4 * Math.PI * v * v;
+                const c = Math.exp(-(M_kg * v * v) / (2 * R * T));
+                return a * b * c;
+            }
+
+            // Chart.js instance
+            let mbChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Maxwell-Boltzmann Distribution',
+                        data: [],
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 0,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: {
+                        duration: 300 // Smooth but quick animation
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            title: {
+                                display: true,
+                                text: 'Speed (m/s)',
+                                font: { size: 14, weight: 'bold' },
+                                color: '#1f2937'
+                            },
+                            ticks: {
+                                maxTicksLimit: 10,
+                                color: '#1f2937'
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Probability Density (s/m)',
+                                font: { size: 14, weight: 'bold' },
+                                color: '#1f2937'
+                            },
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toExponential(1);
+                                },
+                                color: '#1f2937'
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            enabled: true,
+                            mode: 'index',
+                            intersect: false,
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            titleFont: { size: 14 },
+                            bodyFont: { size: 12 }
+                        },
+                        annotation: {
+                            annotations: {
+                                vpLine: {
+                                    type: 'line',
+                                    xMin: 0,
+                                    xMax: 0,
+                                    borderColor: '#3b82f6',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: 'v_p',
+                                        enabled: true,
+                                        position: 'top',
+                                        backgroundColor: 'rgba(59 | 130 | 246 | 0.8)',
+                                        color: '#ffffff',
+                                        font: { size: 12, weight: 'bold' }
+                                    }
+                                },
+                                vavgLine: {
+                                    type: 'line',
+                                    xMin: 0,
+                                    xMax: 0,
+                                    borderColor: '#10b981',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: 'v_avg',
+                                        enabled: true,
+                                        position: 'top',
+                                        backgroundColor: 'rgba(16 | 185 | 129 | 0.8)',
+                                        color: '#ffffff',
+                                        font: { size: 12, weight: 'bold' }
+                                    }
+                                },
+                                vrmsLine: {
+                                    type: 'line',
+                                    xMin: 0,
+                                    xMax: 0,
+                                    borderColor: '#ef4444',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: 'v_rms',
+                                        enabled: true,
+                                        position: 'top',
+                                        backgroundColor: 'rgba(239 | 68 | 68 | 0.8)',
+                                        color: '#ffffff',
+                                        font: { size: 12, weight: 'bold' }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Main update function
+            function updateChart() {
+                const T = parseFloat(tempSlider.value);
+                const M_g = parseFloat(massSlider.value);
+                const M_kg = M_g / 1000;
+
+                // Update displayed values
+                tempValueSpan.textContent = T;
+                massValueSpan.textContent = M_g.toFixed(2);
+
+                // Calculate characteristic speeds
+                const vp = Math.sqrt((2 * R * T) / M_kg);
+                const vavg = Math.sqrt((8 * R * T) / (Math.PI * M_kg));
+                const vrms = Math.sqrt((3 * R * T) / M_kg);
+
+                vpSpan.textContent = vp.toFixed(1);
+                vavgSpan.textContent = vavg.toFixed(1);
+                vrmsSpan.textContent = vrms.toFixed(1);
+
+                // Generate data for the chart
+                const speeds = [];
+                const probabilities = [];
+                const maxSpeed = Math.max(500, vrms * 3);
+                const step = maxSpeed / 250;
+
+                for (let v = 0; v <= maxSpeed; v += step) {
+                    speeds.push(v);
+                    probabilities.push(maxwellBoltzmann(v, T, M_kg));
+                }
+
+                // Update chart data
+                mbChart.data.labels = speeds;
+                mbChart.data.datasets[0].data = probabilities;
+
+                // Update annotations
+                mbChart.options.plugins.annotation.annotations.vpLine.xMin = vp;
+                mbChart.options.plugins.annotation.annotations.vpLine.xMax = vp;
+                mbChart.options.plugins.annotation.annotations.vavgLine.xMin = vavg;
+                mbChart.options.plugins.annotation.annotations.vavgLine.xMax = vavg;
+                mbChart.options.plugins.annotation.annotations.vrmsLine.xMin = vrms;
+                mbChart.options.plugins.annotation.annotations.vrmsLine.xMax = vrms;
+
+                // Dynamically adjust y-axis max
+                const maxProb = Math.max(...probabilities);
+                mbChart.options.scales.y.max = maxProb * 1.1;
+
+                mbChart.update();
+            }
+
+            // Event listeners for sliders
+            tempSlider.addEventListener('input', updateChart);
+            massSlider.addEventListener('input', updateChart);
+
+            // Initial chart render
+            updateChart();
+        });
+    </script>
+</body>
+</html>
